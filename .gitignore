@@ -1,0 +1,13 @@
+# Editor / tooling
+.cursor/
+.vscode/
+
+# Large text docs
+interim_report/**
+
+# Python caches
+__pycache__/
+*.pyc
+
+# project_docs
+project_docs/**

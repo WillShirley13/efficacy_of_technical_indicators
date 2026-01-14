@@ -1,0 +1,11 @@
+CREATE SCHEMA IF NOT EXISTS stock_data
+  DEFAULT CHARACTER SET utf8mb4
+  DEFAULT COLLATE utf8mb4_0900_ai_ci;
+
+CREATE USER IF NOT EXISTS 'ti_project'@'localhost'
+  IDENTIFIED BY '$F9lfAYxWsVn1X9a1r0GL6';
+
+GRANT SELECT, INSERT, UPDATE, DELETE
+ON stock_data.* TO 'ti_project'@'localhost';
+
+FLUSH PRIVILEGES;
