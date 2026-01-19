@@ -10,4 +10,11 @@ __pycache__/
 *.pyc
 
 # project_docs
-project_docs/**
+project_docs/
+
+# Saved csv files
+data_gathering_and_storage/data/
+*.csv
+
+# Report Notes
+report_notes/
