@@ -9,7 +9,7 @@ INTERVAL = "1d"
 TICKERS: list[str] = ["SPY", "QQQ", "IWM", "EFA", "EEM"]
 
 BASE_DIR = Path(__file__).resolve().parent
-OUT_DIR = BASE_DIR / "data"
+OUT_DIR = BASE_DIR / "data/raw"
 OUT_DIR.mkdir(parents=True, exist_ok=True)
 
 
@@ -42,9 +42,9 @@ for ticker in TICKERS:
         progress=False,
         auto_adjust=True,
     )
-    df.columns = df.columns.get_level_values(0)
+    df.columns = [col.lower() for col in df.columns.get_level_values(0).tolist()]
     if df.empty:
         print(f"Failed to download data for {ticker}")
         continue
     print_df_summary(df, name=ticker)
-    df.to_csv(OUT_DIR / f"{ticker}.csv", index=True)
+    df.to_csv(OUT_DIR / f"{ticker}.csv", index=True, index_label="date")
