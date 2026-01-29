@@ -5,6 +5,8 @@ CREATE TABLE bbands_daily (
     upper DECIMAL(18 , 8 ),
     middle DECIMAL(18 , 8 ),
     lower DECIMAL(18 , 8 ),
+    bb_width DECIMAL(18 , 8 ),
+    bb_percent_b DECIMAL(18 , 8 ),
     PRIMARY KEY (equity_id , trade_date , ti_def_id),
     CONSTRAINT fk_bbands_daily_equity FOREIGN KEY (equity_id)
         REFERENCES equities (equity_id),
