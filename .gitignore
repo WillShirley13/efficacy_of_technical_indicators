@@ -18,3 +18,6 @@ data_gathering_and_storage/data/
 
 # Report Notes
 report_notes/
+
+# Environment variables
+.env
