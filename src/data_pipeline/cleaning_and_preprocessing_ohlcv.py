@@ -1,13 +1,13 @@
-import pandas as pd
 from pathlib import Path
 from typing import Final
-from numpy.typing import NDArray
+
 import numpy as np
+import pandas as pd
+from numpy.typing import NDArray
 
-
-BASE_DIR: Final[Path] = Path(__file__).resolve().parent
-RAW_DATA_DIR: Final[Path] = BASE_DIR / "data/raw"
-CLEAN_DATA_DIR: Final[Path] = BASE_DIR / "data/clean"
+BASE_DIR: Final[Path] = Path(__file__).resolve().parent.parent.parent
+RAW_DATA_DIR: Final[Path] = BASE_DIR / "data" / "raw"
+CLEAN_DATA_DIR: Final[Path] = BASE_DIR / "data" / "clean"
 
 
 def get_stock_data() -> dict[str, pd.DataFrame]:

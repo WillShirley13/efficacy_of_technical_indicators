@@ -1,28 +1,18 @@
 import json
-import os
-from pathlib import Path
-from typing import Final, cast
+from typing import cast
 
-import mysql.connector
 import pandas as pd
 import pandas_ta  # noqa: F401
-from dotenv import load_dotenv
 from mysql.connector.abstracts import MySQLConnectionAbstract, MySQLCursorAbstract
 from mysql.connector.pooling import PooledMySQLConnection
 
-# ---------------------------------------------------------------------------
-# Paths / constants
-# ---------------------------------------------------------------------------
-BASE_DIR: Final[Path] = Path(__file__).resolve().parent
-CLEAN_DATA_DIR: Final[Path] = BASE_DIR / "data/clean"
+from src.utils import get_db_conn, get_equity_id, get_stock_data
 
 
 def _get_pandas_ta_col_name(df: pd.DataFrame, prefix: str) -> str:
     """
     Pick exactly one column from `df` whose name starts with `prefix`.
 
-    This avoids relying on pandas_ta column ordering (which can change) while still
-    being robust to suffix formatting differences (e.g. `2` vs `2.0`).
     """
     matches: list[str] = [str(c) for c in df.columns if str(c).startswith(prefix)]
     if len(matches) != 1:
@@ -30,86 +20,24 @@ def _get_pandas_ta_col_name(df: pd.DataFrame, prefix: str) -> str:
     return matches[0]
 
 
-def get_db_conn() -> PooledMySQLConnection | MySQLConnectionAbstract:
-    # Load DB credentials from `.env`
-    load_dotenv()
-
-    # Create a single connection for the whole run.
-    conn = mysql.connector.connect(
-        host="localhost",
-        user=os.getenv("STOCK_DATA_USER"),
-        password=os.getenv("STOCK_DATA_PW"),
-        database="stock_data",
+def _get_ti_definition(
+    cursor: MySQLCursorAbstract,
+    ti_name: str,
+    timeframe: int,
+) -> tuple[int, dict[str, int]]:
+    """
+    Get technical indicator + timeframe-specific database id and corresponding params
+    """
+    cursor.execute(
+        "SELECT ti_def_id, params_json FROM ti_definitions where ti_name = %s AND time_frame = %s",
+        (ti_name, timeframe),
     )
-    print("--- Database connection successful ---")
-
-    return conn
-
-
-def get_stock_data() -> dict[str, pd.DataFrame]:
-    """
-    Load the cleaned OHLCV CSVs into a `{ticker: DataFrame}` dict.
-
-    Notes:
-    - Each DataFrame is indexed by `date` (parsed as datetime).
-    - Column names are standardised to lower-case (`open/high/low/close/volume`).
-    """
-    stock_data: dict[str, pd.DataFrame] = {
-        "EEM": pd.DataFrame(),
-        "EFA": pd.DataFrame(),
-        "IWM": pd.DataFrame(),
-        "QQQ": pd.DataFrame(),
-        "SPY": pd.DataFrame(),
-    }
-
-    for stock in stock_data.keys():
-        # Read the cleaned CSV for this ticker. `date` is used as the index.
-        stock_data[stock] = pd.read_csv(  # pyright: ignore[reportUnknownMemberType]
-            f"{CLEAN_DATA_DIR}/{stock}.csv", index_col="date", parse_dates=["date"]
-        )
-
-        if stock_data[stock].empty:
-            raise ValueError(f"Failed to load {stock}'s data")
-
-        # Validate expected OHLCV columns
-        required_cols: set[str] = {
-            "date",
-            "close",
-            "high",
-            "low",
-            "open",
-            "volume",
-        }
-        actual_cols: set[str] = set(list(stock_data[stock].columns) + [str(stock_data[stock].index.name)])
-        if required_cols - actual_cols:
-            raise ValueError(f"{stock} Missing required columns, has {actual_cols}, needs {required_cols}")
-
-        print(f"{stock_data[stock].info}\n")
-
-    return stock_data
-
-
-def get_equity_id(
-    conn: PooledMySQLConnection | MySQLConnectionAbstract,
-) -> dict[str, int]:
-    """
-    Fetch `{ticker: equity_id}` from the `equities` table.
-    """
-    expected_tickers: set[str] = {"EEM", "EFA", "IWM", "QQQ", "SPY"}
-    cursor: MySQLCursorAbstract = conn.cursor()
-
-    # Get all equity IDs and tickers
-    cursor.execute("SELECT equity_id, ticker FROM equities ORDER BY ticker")
-    result = cursor.fetchall()
-    if not result:
-        raise ValueError("Unable to retrieve equity_ids and tickers from equities table")
-
-    equity_info: dict[str, int] = {cast(str, ticker): cast(int, equity_id) for equity_id, ticker in result}
-
-    # Check that all expected tickers are in the database
-    if expected_tickers - set(equity_info.keys()):
-        raise ValueError(f"Expected tickers {expected_tickers} not found in equities table")
-    return equity_info
+    result = cursor.fetchone()
+    if result is None:
+        raise ValueError(f"No TI definition found for {ti_name} with timeframe {timeframe}")
+    ti_def_id: int = int(result[0])  # type: ignore[arg-type]
+    params_json: dict[str, int] = json.loads(str(result[1]))  # type: ignore[arg-type]
+    return ti_def_id, params_json
 
 
 def derive_rsi(
@@ -125,6 +53,8 @@ def derive_rsi(
     """
     cursor: MySQLCursorAbstract = conn.cursor()
     ti_name: str = "RSI"
+    ti_def_id, params_json = _get_ti_definition(cursor, ti_name, timeframe)
+    length: int = params_json["length"]
     for name, df in data.items():
         print("\n" + "=" * 60)
         print(f"Processing ETF: {name} - Deriving relative strength index values")
@@ -134,16 +64,6 @@ def derive_rsi(
         equity_id: int = equity_info[name]
         print(f"  → Retrieved equity_id: {equity_id}")
 
-        cursor.execute(
-            "SELECT ti_def_id, params_json FROM ti_definitions where ti_name = %s AND time_frame = %s",
-            (ti_name, timeframe),
-        )
-        result = cursor.fetchone()
-        if result is None:
-            raise ValueError(f"No TI definition found for {ti_name} with timeframe {timeframe}")
-        ti_def_id: int = int(result[0])  # type: ignore[arg-type]
-        params_json: dict[str, int] = json.loads(str(result[1]))  # type: ignore[arg-type]
-        length: int = params_json["length"]
         print(f"  → Retrieved ti_def_id: {ti_def_id}")
         print(f"  → Parameters: length={length}")
 
@@ -190,6 +110,10 @@ def derive_stoch(
     """
     cursor: MySQLCursorAbstract = conn.cursor()
     ti_name: str = "STOCH"
+    ti_def_id, params_json = _get_ti_definition(cursor, ti_name, timeframe)
+    k_length: int = params_json["k"]
+    d_length: int = params_json["d"]
+    smooth_k: int = 3
     for name, df in data.items():
         print("\n" + "=" * 60)
         print(f"Processing ETF: {name} - Deriving stochastic oscillator values")
@@ -199,18 +123,6 @@ def derive_stoch(
         equity_id: int = equity_info[name]
         print(f"  → Retrieved equity_id: {equity_id}")
 
-        cursor.execute(
-            "SELECT ti_def_id, params_json FROM ti_definitions where ti_name = %s AND time_frame = %s",
-            (ti_name, timeframe),
-        )
-        result = cursor.fetchone()
-        if result is None:
-            raise ValueError(f"No TI definition found for {ti_name} with timeframe {timeframe}")
-        ti_def_id: int = int(result[0])  # type: ignore[arg-type]
-        params_json: dict[str, int] = json.loads(str(result[1]))  # type: ignore[arg-type]
-        k_length: int = params_json["k"]
-        d_length: int = params_json["d"]
-        smooth_k: int = 3
         print(f"  → Retrieved ti_def_id: {ti_def_id}")
         print(f"  → Parameters: k_length={k_length}, d_length={d_length}, smooth_k={smooth_k}")
 
@@ -278,6 +190,9 @@ def derive_sma(
     """
     cursor: MySQLCursorAbstract = conn.cursor()
     ti_name: str = "SMA"
+    ti_def_id, params_json = _get_ti_definition(cursor, ti_name, timeframe)
+    sma_fast: int = params_json["sma_fast"]
+    sma_slow: int = params_json["sma_slow"]
     for name, df in data.items():
         print("\n" + "=" * 60)
         print(f"Processing ETF: {name} - Deriving simple moving average values")
@@ -287,17 +202,6 @@ def derive_sma(
         equity_id: int = equity_info[name]
         print(f"  → Retrieved equity_id: {equity_id}")
 
-        cursor.execute(
-            "SELECT ti_def_id, params_json FROM ti_definitions where ti_name = %s AND time_frame = %s",
-            (ti_name, timeframe),
-        )
-        result = cursor.fetchone()
-        if result is None:
-            raise ValueError(f"No TI definition found for {ti_name} with timeframe {timeframe}")
-        ti_def_id: int = int(result[0])  # type: ignore[arg-type]
-        params_json: dict[str, int] = json.loads(str(result[1]))  # type: ignore[arg-type]
-        sma_fast: int = params_json["sma_fast"]
-        sma_slow: int = params_json["sma_slow"]
         print(f"  → Retrieved ti_def_id: {ti_def_id}")
         print(f"  → Parameters: sma_fast={sma_fast}, sma_slow={sma_slow}")
 
@@ -371,6 +275,9 @@ def derive_ema(
     """
     cursor: MySQLCursorAbstract = conn.cursor()
     ti_name: str = "EMA"
+    ti_def_id, params_json = _get_ti_definition(cursor, ti_name, timeframe)
+    ema_fast: int = params_json["ema_fast"]
+    ema_slow: int = params_json["ema_slow"]
     for name, df in data.items():
         print("\n" + "=" * 60)
         print(f"Processing ETF: {name} - Deriving simple moving average values")
@@ -380,17 +287,6 @@ def derive_ema(
         equity_id: int = equity_info[name]
         print(f"  → Retrieved equity_id: {equity_id}")
 
-        cursor.execute(
-            "SELECT ti_def_id, params_json FROM ti_definitions where ti_name = %s AND time_frame = %s",
-            (ti_name, timeframe),
-        )
-        result = cursor.fetchone()
-        if result is None:
-            raise ValueError(f"No TI definition found for {ti_name} with timeframe {timeframe}")
-        ti_def_id: int = int(result[0])  # type: ignore[arg-type]
-        params_json: dict[str, int] = json.loads(str(result[1]))  # type: ignore[arg-type]
-        ema_fast: int = params_json["ema_fast"]
-        ema_slow: int = params_json["ema_slow"]
         print(f"  → Retrieved ti_def_id: {ti_def_id}")
         print(f"  → Parameters: ema_fast={ema_fast}, ema_slow={ema_slow}")
 
@@ -464,6 +360,8 @@ def derive_adx(
     """
     cursor: MySQLCursorAbstract = conn.cursor()
     ti_name: str = "ADX"
+    ti_def_id, params_json = _get_ti_definition(cursor, ti_name, timeframe)
+    length: int = params_json["length"]
     for name, df in data.items():
         print("\n" + "=" * 60)
         print(f"Processing ETF: {name} - Deriving average directional index values")
@@ -473,16 +371,6 @@ def derive_adx(
         equity_id: int = equity_info[name]
         print(f"  → Retrieved equity_id: {equity_id}")
 
-        cursor.execute(
-            "SELECT ti_def_id, params_json FROM ti_definitions where ti_name = %s AND time_frame = %s",
-            (ti_name, timeframe),
-        )
-        result = cursor.fetchone()
-        if result is None:
-            raise ValueError(f"No TI definition found for {ti_name} with timeframe {timeframe}")
-        ti_def_id: int = int(result[0])  # type: ignore[arg-type]
-        params_json: dict[str, int] = json.loads(str(result[1]))  # type: ignore[arg-type]
-        length: int = params_json["length"]
         print(f"  → Retrieved ti_def_id: {ti_def_id}")
         print(f"  → Parameters: length={length}")
 
@@ -544,6 +432,9 @@ def derive_bbands(
     """
     cursor: MySQLCursorAbstract = conn.cursor()
     ti_name: str = "BBANDS"
+    ti_def_id, params_json = _get_ti_definition(cursor, ti_name, timeframe)
+    std: int = params_json["std"]
+    length: int = params_json["length"]
     for name, df in data.items():
         print("\n" + "=" * 60)
         print(f"Processing ETF: {name} - Deriving bollinger bands values")
@@ -553,17 +444,6 @@ def derive_bbands(
         equity_id: int = equity_info[name]
         print(f"  → Retrieved equity_id: {equity_id}")
 
-        cursor.execute(
-            "SELECT ti_def_id, params_json FROM ti_definitions where ti_name = %s AND time_frame = %s",
-            (ti_name, timeframe),
-        )
-        result = cursor.fetchone()
-        if result is None:
-            raise ValueError(f"No TI definition found for {ti_name} with timeframe {timeframe}")
-        ti_def_id: int = int(result[0])  # type: ignore[arg-type]
-        params_json: dict[str, int] = json.loads(str(result[1]))  # type: ignore[arg-type]
-        std: int = params_json["std"]
-        length: int = params_json["length"]
         print(f"  → Retrieved ti_def_id: {ti_def_id}")
         print(f"  → Parameters: std={std}, length={length}")
 
@@ -615,10 +495,291 @@ def derive_bbands(
         print("=" * 60)
 
 
+def derive_atr(
+    data: dict[str, pd.DataFrame],
+    timeframe: int,
+    conn: PooledMySQLConnection | MySQLConnectionAbstract,
+    equity_info: dict[str, int],
+) -> None:
+    """
+    Derive Average True Range and upsert them into `atr_daily`.
+
+    `timeframe` selects the parameter set from `ti_definitions` (e.g. 3-day).
+    """
+    cursor: MySQLCursorAbstract = conn.cursor()
+    ti_name: str = "ATR"
+    ti_def_id, params_json = _get_ti_definition(cursor, ti_name, timeframe)
+    length: int = params_json["length"]
+    for name, df in data.items():
+        print("\n" + "=" * 60)
+        print(f"Processing ETF: {name} - Deriving atr values")
+        print("=" * 60)
+
+        # --- Get equity_id ---
+        equity_id: int = equity_info[name]
+        print(f"  → Retrieved equity_id: {equity_id}")
+
+        print(f"  → Retrieved ti_def_id: {ti_def_id}")
+
+        # --- Calculate indicator (pandas_ta) ---
+        rows: list[tuple[int, str, int, float]] = []
+
+        print(f"  → Calculating Bollinger bands with length={length}...")
+        atr_series: pd.Series = df.ta.atr(
+            high="high",
+            low="low",
+            close="close",
+            length=length,
+        )
+
+        # atr needs a warm-up period before values become non-NaN.
+        warmup_periods: int = length - 1
+
+        # --- Prepare rows ---
+        for date, atr_val in atr_series.iloc[warmup_periods:].items():
+            # Skip any remaining NaNs
+            if pd.isna(atr_val):
+                continue
+            date_ts: pd.Timestamp = cast(pd.Timestamp, date)
+            date_str: str = date_ts.strftime("%Y-%m-%d")  # Convert to string for MySQL
+            atr_daily_row = (equity_id, date_str, ti_def_id, float(atr_val))
+            rows.append(atr_daily_row)
+
+        # --- Upsert into DB ---
+        print(f"  → Prepared {len(rows)} rows for insertion")
+        if rows:
+            cursor.executemany(
+                "INSERT INTO atr_daily (equity_id, trade_date, ti_def_id, atr) "
+                "VALUES (%s, %s, %s, %s) "
+                "ON DUPLICATE KEY UPDATE atr = VALUES(atr)",
+                rows,
+            )
+        conn.commit()
+        print(f"  ✓ Successfully upserted {len(rows)} atr values for {name} at {timeframe}-day timeframe")
+        print("=" * 60)
+
+
+def derive_obv(
+    data: dict[str, pd.DataFrame],
+    timeframe: int,
+    conn: PooledMySQLConnection | MySQLConnectionAbstract,
+    equity_info: dict[str, int],
+) -> None:
+    """
+    Derive On-Balance Volume values and upsert them into `obv_daily`.
+
+    `timeframe` selects the parameter set from `ti_definitions` (e.g. 3-day).
+    """
+    cursor: MySQLCursorAbstract = conn.cursor()
+    ti_name: str = "OBV"
+    ti_def_id, params_json = _get_ti_definition(cursor, ti_name, timeframe)
+    signal: int = params_json["signal"]
+    for name, df in data.items():
+        print("\n" + "=" * 60)
+        print(f"Processing ETF: {name} - Deriving on-balance volume values")
+        print("=" * 60)
+
+        # --- Get equity_id ---
+        equity_id: int = equity_info[name]
+        print(f"  → Retrieved equity_id: {equity_id}")
+
+        print(f"  → Retrieved ti_def_id: {ti_def_id}")
+        print(f"  → Parameters: signal={signal}")
+
+        # --- Calculate indicator (pandas_ta) ---
+        rows: list[tuple[int, str, int, int]] = []
+
+        print("  → Calculating OBV...")
+        obv_series: pd.Series = df.ta.obv(close="close", volume="volume")
+
+        # OBV is cumulative; use signal length as warm-up to align with planned smoothing.
+        warmup_periods: int = max(signal - 1, 0)
+
+        # --- Prepare rows ---
+        for date, obv_value in obv_series.iloc[warmup_periods:].items():
+            # Skip any remaining NaNs
+            if pd.isna(obv_value):
+                continue
+            date_ts: pd.Timestamp = cast(pd.Timestamp, date)
+            date_str: str = date_ts.strftime("%Y-%m-%d")  # Convert to string for MySQL
+            obv_daily_row = (equity_id, date_str, ti_def_id, int(obv_value))
+            rows.append(obv_daily_row)
+
+        # --- Upsert into DB ---
+        print(f"  → Prepared {len(rows)} rows for insertion")
+        if rows:
+            cursor.executemany(
+                "INSERT INTO obv_daily (equity_id, trade_date, ti_def_id, obv) "
+                "VALUES (%s, %s, %s, %s) "
+                "ON DUPLICATE KEY UPDATE obv = VALUES(obv)",
+                rows,
+            )
+        conn.commit()
+        print(f"  ✓ Successfully upserted {len(rows)} obv values for {name} at {timeframe}-day timeframe")
+        print("=" * 60)
+
+
+def derive_vol_roc(
+    data: dict[str, pd.DataFrame],
+    timeframe: int,
+    conn: PooledMySQLConnection | MySQLConnectionAbstract,
+    equity_info: dict[str, int],
+) -> None:
+    """
+    Derive volume activity values and upsert them into `volume_activity_daily`.
+
+    `timeframe` selects the parameter set from `ti_definitions` (e.g. 3-day).
+    """
+    cursor: MySQLCursorAbstract = conn.cursor()
+    ti_name: str = "VOL_ROC"
+    ti_def_id, params_json = _get_ti_definition(cursor, ti_name, timeframe)
+    length: int = params_json["length"]
+    for name, df in data.items():
+        print("\n" + "=" * 60)
+        print(f"Processing ETF: {name} - Deriving volume activity values")
+        print("=" * 60)
+
+        # --- Get equity_id ---
+        equity_id: int = equity_info[name]
+        print(f"  → Retrieved equity_id: {equity_id}")
+
+        print(f"  → Retrieved ti_def_id: {ti_def_id}")
+        print(f"  → Parameters: length={length}")
+
+        # --- Calculate indicator (pandas) ---
+        rows: list[tuple[int, str, int, float, float]] = []
+
+        print(f"  → Calculating volume SMA and ratio with length={length}...")
+        volume_sma: pd.Series = df["volume"].rolling(window=length).mean()
+        volume_ratio: pd.Series = df["volume"] / volume_sma
+        volume_activity_df: pd.DataFrame = pd.concat(
+            [
+                volume_sma.rename("volume_sma"),
+                volume_ratio.rename("volume_ratio"),
+            ],
+            axis=1,
+        )
+
+        # Needs a warm-up period before values become non-NaN.
+        warmup_periods: int = length - 1
+
+        # --- Prepare rows ---
+        for date, row in volume_activity_df.iloc[warmup_periods:].iterrows():
+            vol_sma = row["volume_sma"]
+            vol_ratio = row["volume_ratio"]
+            # Skip any remaining NaNs
+            if pd.isna(vol_sma) or pd.isna(vol_ratio):
+                continue
+            date_ts: pd.Timestamp = cast(pd.Timestamp, date)
+            date_str: str = date_ts.strftime("%Y-%m-%d")  # Convert to string for MySQL
+            volume_activity_row = (
+                equity_id,
+                date_str,
+                ti_def_id,
+                float(vol_sma),
+                float(vol_ratio),
+            )
+            rows.append(volume_activity_row)
+
+        # --- Upsert into DB ---
+        print(f"  → Prepared {len(rows)} rows for insertion")
+        if rows:
+            cursor.executemany(
+                "INSERT INTO volume_activity_daily (equity_id, trade_date, ti_def_id, volume_sma, volume_ratio) "
+                "VALUES (%s, %s, %s, %s, %s) "
+                "ON DUPLICATE KEY UPDATE volume_sma = VALUES(volume_sma), volume_ratio = VALUES(volume_ratio)",
+                rows,
+            )
+        conn.commit()
+        print(f"  ✓ Successfully upserted {len(rows)} volume activity values for {name} at {timeframe}-day timeframe")
+        print("=" * 60)
+
+
+def derive_macd(
+    data: dict[str, pd.DataFrame],
+    timeframe: int,
+    conn: PooledMySQLConnection | MySQLConnectionAbstract,
+    equity_info: dict[str, int],
+) -> None:
+    """
+    Derive MACD values and upsert them into `macd_daily`.
+
+    `timeframe` selects the parameter set from `ti_definitions` (e.g. 3-day).
+    """
+    cursor: MySQLCursorAbstract = conn.cursor()
+    ti_name: str = "MACD"
+    ti_def_id, params_json = _get_ti_definition(cursor, ti_name, timeframe)
+    fast: int = params_json["fast"]
+    slow: int = params_json["slow"]
+    signal: int = params_json["signal"]
+    for name, df in data.items():
+        print("\n" + "=" * 60)
+        print(f"Processing ETF: {name} - Deriving MACD values")
+        print("=" * 60)
+
+        # --- Get equity_id ---
+        equity_id: int = equity_info[name]
+        print(f"  → Retrieved equity_id: {equity_id}")
+
+        print(f"  → Retrieved ti_def_id: {ti_def_id}")
+        print(f"  → Parameters: fast={fast}, slow={slow}, signal={signal}")
+
+        # --- Calculate indicator (pandas_ta) ---
+        rows: list[tuple[int, str, int, float, float, float]] = []
+
+        print(f"  → Calculating MACD with fast={fast}, slow={slow}, signal={signal}...")
+        macd_df: pd.DataFrame = df.ta.macd(
+            close="close",
+            fast=fast,
+            slow=slow,
+            signal=signal,
+        )
+
+        # MACD needs a warm-up period before values become non-NaN.
+        warmup_periods: int = slow + signal - 2
+
+        # --- Prepare rows ---
+        col_macd: str = _get_pandas_ta_col_name(macd_df, "MACD_")
+        col_signal: str = _get_pandas_ta_col_name(macd_df, "MACDs_")
+        col_hist: str = _get_pandas_ta_col_name(macd_df, "MACDh_")
+
+        for date, row in macd_df.iloc[warmup_periods:].iterrows():
+            macd_value = row[col_macd]
+            signal_value = row[col_signal]
+            hist_value = row[col_hist]
+            # Skip any remaining NaNs
+            if pd.isna(macd_value) or pd.isna(signal_value) or pd.isna(hist_value):
+                continue
+            date_ts: pd.Timestamp = cast(pd.Timestamp, date)
+            date_str: str = date_ts.strftime("%Y-%m-%d")  # Convert to string for MySQL
+            macd_daily_row = (
+                equity_id,
+                date_str,
+                ti_def_id,
+                float(macd_value),
+                float(signal_value),
+                float(hist_value),
+            )
+            rows.append(macd_daily_row)
+
+        # --- Upsert into DB ---
+        print(f"  → Prepared {len(rows)} rows for insertion")
+        if rows:
+            cursor.executemany(
+                "INSERT INTO macd_daily (equity_id, trade_date, ti_def_id, macd, signal_line, hist) "
+                "VALUES (%s, %s, %s, %s, %s, %s) "
+                "ON DUPLICATE KEY UPDATE macd = VALUES(macd), signal_line = VALUES(signal_line), hist = VALUES(hist)",
+                rows,
+            )
+        conn.commit()
+        print(f"  ✓ Successfully upserted {len(rows)} macd values for {name} at {timeframe}-day timeframe")
+        print("=" * 60)
+
+
 if __name__ == "__main__":
     db_conn = get_db_conn()
     stock_data = get_stock_data()
-    equity_info = get_equity_id(db_conn)
+    equity_info = get_equity_id()
 
     for tf in [3, 10, 20]:
         derive_rsi(stock_data, tf, db_conn, equity_info)
@@ -627,3 +788,7 @@ if __name__ == "__main__":
         derive_ema(stock_data, tf, db_conn, equity_info)
         derive_adx(stock_data, tf, db_conn, equity_info)
         derive_bbands(stock_data, tf, db_conn, equity_info)
+        derive_atr(stock_data, tf, db_conn, equity_info)
+        derive_obv(stock_data, tf, db_conn, equity_info)
+        derive_vol_roc(stock_data, tf, db_conn, equity_info)
+        derive_macd(stock_data, tf, db_conn, equity_info)

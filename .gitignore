@@ -9,6 +9,9 @@ interim_report/**
 __pycache__/
 *.pyc
 
+# Build / packaging artifacts
+*.egg-info/
+
 # project_docs
 project_docs/
 
@@ -21,3 +24,7 @@ report_notes/
 
 # Environment variables
 .env
+
+# Feature screening guide
+src/eda/feature_screening_guide.md
+*.md

@@ -1,15 +1,15 @@
-import yfinance as yf  # type: ignore[import-untyped]
-import pandas as pd
 from pathlib import Path
 
+import pandas as pd
+import yfinance as yf  # type: ignore[import-untyped]
 
 START_DATE = "2006-01-01"
 END_DATE = "2026-01-01"
 INTERVAL = "1d"
 TICKERS: list[str] = ["SPY", "QQQ", "IWM", "EFA", "EEM"]
 
-BASE_DIR = Path(__file__).resolve().parent
-OUT_DIR = BASE_DIR / "data/raw"
+BASE_DIR = Path(__file__).resolve().parent.parent.parent
+OUT_DIR = BASE_DIR / "data" / "raw"
 OUT_DIR.mkdir(parents=True, exist_ok=True)
 
 
@@ -21,7 +21,6 @@ def print_df_summary(df: pd.DataFrame, *, name: str, head: int = 5) -> None:
     print(f"\nFirst {head} rows:")
     print(df.head(head))
 
-    # `info()` already includes columns, non-null counts, and dtypes, so don't print those separately.
     print("\nColumn info (non-null counts + dtypes):")
     df.info()
 
