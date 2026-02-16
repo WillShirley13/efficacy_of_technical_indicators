@@ -25,6 +25,4 @@ report_notes/
 # Environment variables
 .env
 
-# Feature screening guide
-src/eda/feature_screening_guide.md
 *.md
