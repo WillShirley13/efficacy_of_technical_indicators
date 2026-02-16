@@ -8,9 +8,7 @@ from dotenv import load_dotenv
 from mysql.connector.abstracts import MySQLConnectionAbstract, MySQLCursorAbstract
 from mysql.connector.pooling import PooledMySQLConnection
 
-# ---------------------------------------------------------------------------
 # Paths / constants
-# ---------------------------------------------------------------------------
 BASE_DIR: Final[Path] = Path(__file__).resolve().parent.parent
 CLEAN_DATA_DIR: Final[Path] = BASE_DIR / "data" / "clean"
 

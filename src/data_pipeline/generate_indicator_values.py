@@ -60,20 +60,20 @@ def derive_rsi(
         print(f"Processing ETF: {name} - Deriving relative strength index values")
         print("=" * 60)
 
-        # --- Get equity_id ---
+        #  Get equity_id
         equity_id: int = equity_info[name]
         print(f"  → Retrieved equity_id: {equity_id}")
 
         print(f"  → Retrieved ti_def_id: {ti_def_id}")
         print(f"  → Parameters: length={length}")
 
-        # --- Calculate indicator (pandas_ta) ---
+        #  Calculate indicator (pandas_ta)
         rows: list[tuple[int, str, int, float]] = []
 
         print(f"  → Calculating RSI with length={length}...")
         rsi: pd.Series = df.ta.rsi(close="close", length=length)
 
-        # --- Prepare rows ---
+        #  Prepare rows
         for date, rsi_value in rsi.iloc[length:].items():
             # Skip warm-up NaNs and any missing values (avoids MySQL insert issues).
             if pd.isna(rsi_value):
@@ -83,7 +83,7 @@ def derive_rsi(
             rsi_daily_row = (equity_id, date_str, ti_def_id, float(rsi_value))
             rows.append(rsi_daily_row)
 
-        # --- Upsert into DB ---
+        #  Upsert into DB
         print(f"  → Prepared {len(rows)} rows for insertion")
         if rows:
             cursor.executemany(
@@ -119,14 +119,14 @@ def derive_stoch(
         print(f"Processing ETF: {name} - Deriving stochastic oscillator values")
         print("=" * 60)
 
-        # --- Get equity_id ---
+        #  Get equity_id
         equity_id: int = equity_info[name]
         print(f"  → Retrieved equity_id: {equity_id}")
 
         print(f"  → Retrieved ti_def_id: {ti_def_id}")
         print(f"  → Parameters: k_length={k_length}, d_length={d_length}, smooth_k={smooth_k}")
 
-        # --- Calculate indicator (pandas_ta) ---
+        #  Calculate indicator (pandas_ta)
         rows: list[tuple[int, str, int, float, float]] = []
 
         print(f"  → Calculating Stochastic with k_length={k_length}, d_length={d_length}...")
@@ -142,7 +142,7 @@ def derive_stoch(
         # Stochastic needs a warm-up period before values become non-NaN.
         warmup_periods: int = k_length + d_length + smooth_k - 3  # stochastic requires warmup period
 
-        # --- Prepare rows ---
+        #  Prepare rows
         col_k: str = _get_pandas_ta_col_name(stoch, "STOCHk_")
         col_d: str = _get_pandas_ta_col_name(stoch, "STOCHd_")
 
@@ -163,7 +163,7 @@ def derive_stoch(
             )
             rows.append(stoch_daily_row)
 
-        # --- Upsert into DB ---
+        #  Upsert into DB
         print(f"  → Prepared {len(rows)} rows for insertion")
         if rows:
             cursor.executemany(
@@ -198,14 +198,14 @@ def derive_sma(
         print(f"Processing ETF: {name} - Deriving simple moving average values")
         print("=" * 60)
 
-        # --- Get equity_id ---
+        #  Get equity_id
         equity_id: int = equity_info[name]
         print(f"  → Retrieved equity_id: {equity_id}")
 
         print(f"  → Retrieved ti_def_id: {ti_def_id}")
         print(f"  → Parameters: sma_fast={sma_fast}, sma_slow={sma_slow}")
 
-        # --- Calculate indicator (pandas_ta) ---
+        #  Calculate indicator (pandas_ta)
         rows: list[tuple[int, str, int, float, float]] = []
 
         print(f"  → Calculating Simple Moving Average with sma_fast={sma_fast}, sma_slow={sma_slow}...")
@@ -230,7 +230,7 @@ def derive_sma(
         # SMA needs a warm-up period before values become non-NaN.
         warmup_periods: int = sma_slow - 1
 
-        # --- Prepare rows ---
+        #  Prepare rows
         for date, row in sma_cross_df.iloc[warmup_periods:].iterrows():
             fast_sma = row["sma_fast"]
             slow_sma = row["sma_slow"]
@@ -248,7 +248,7 @@ def derive_sma(
             )
             rows.append(sma_daily_row)
 
-        # --- Upsert into DB ---
+        #  Upsert into DB
         print(f"  → Prepared {len(rows)} rows for insertion")
         if rows:
             cursor.executemany(
@@ -283,14 +283,14 @@ def derive_ema(
         print(f"Processing ETF: {name} - Deriving simple moving average values")
         print("=" * 60)
 
-        # --- Get equity_id ---
+        #  Get equity_id
         equity_id: int = equity_info[name]
         print(f"  → Retrieved equity_id: {equity_id}")
 
         print(f"  → Retrieved ti_def_id: {ti_def_id}")
         print(f"  → Parameters: ema_fast={ema_fast}, ema_slow={ema_slow}")
 
-        # --- Calculate indicator (pandas_ta) ---
+        #  Calculate indicator (pandas_ta)
         rows: list[tuple[int, str, int, float, float]] = []
 
         print(f"  → Calculating Exponential Moving Average with ema_fast={ema_fast}, ema_slow={ema_slow}...")
@@ -315,7 +315,7 @@ def derive_ema(
         # ema needs a warm-up period before values become non-NaN.
         warmup_periods: int = ema_slow - 1
 
-        # --- Prepare rows ---
+        #  Prepare rows
         for date, row in ema_cross_df.iloc[warmup_periods:].iterrows():
             fast_ema = row["ema_fast"]
             slow_ema = row["ema_slow"]
@@ -333,7 +333,7 @@ def derive_ema(
             )
             rows.append(ema_daily_row)
 
-        # --- Upsert into DB ---
+        #  Upsert into DB
         print(f"  → Prepared {len(rows)} rows for insertion")
         if rows:
             cursor.executemany(
@@ -367,14 +367,14 @@ def derive_adx(
         print(f"Processing ETF: {name} - Deriving average directional index values")
         print("=" * 60)
 
-        # --- Get equity_id ---
+        #  Get equity_id
         equity_id: int = equity_info[name]
         print(f"  → Retrieved equity_id: {equity_id}")
 
         print(f"  → Retrieved ti_def_id: {ti_def_id}")
         print(f"  → Parameters: length={length}")
 
-        # --- Calculate indicator (pandas_ta) ---
+        #  Calculate indicator (pandas_ta)
         rows: list[tuple[int, str, int, float, float, float]] = []
 
         print(f"  → Calculating ADX with length={length}...")
@@ -388,7 +388,7 @@ def derive_adx(
         # adx needs a warm-up period before values become non-NaN.
         warmup_periods: int = length - 1
 
-        # --- Prepare rows ---
+        #  Prepare rows
         col_adx: str = _get_pandas_ta_col_name(adx_series, "ADX_")
         col_plus_di: str = _get_pandas_ta_col_name(adx_series, "DMP_")
         col_minus_di: str = _get_pandas_ta_col_name(adx_series, "DMN_")
@@ -405,7 +405,7 @@ def derive_adx(
             adx_daily_row = (equity_id, date_str, ti_def_id, float(adx), float(plus_di), float(minus_di))
             rows.append(adx_daily_row)
 
-        # --- Upsert into DB ---
+        #  Upsert into DB
         print(f"  → Prepared {len(rows)} rows for insertion")
         if rows:
             cursor.executemany(
@@ -440,14 +440,14 @@ def derive_bbands(
         print(f"Processing ETF: {name} - Deriving bollinger bands values")
         print("=" * 60)
 
-        # --- Get equity_id ---
+        #  Get equity_id
         equity_id: int = equity_info[name]
         print(f"  → Retrieved equity_id: {equity_id}")
 
         print(f"  → Retrieved ti_def_id: {ti_def_id}")
         print(f"  → Parameters: std={std}, length={length}")
 
-        # --- Calculate indicator (pandas_ta) ---
+        #  Calculate indicator (pandas_ta)
         rows: list[tuple[int, str, int, float, float, float, float, float]] = []
 
         print(f"  → Calculating Bollinger bands with length={length}, std={std}...")
@@ -460,7 +460,7 @@ def derive_bbands(
         # BBANDS needs a warm-up period before values become non-NaN.
         warmup_periods: int = length - 1
 
-        # --- Prepare rows ---
+        #  Prepare rows
         col_lower: str = _get_pandas_ta_col_name(bbands_series, "BBL_")
         col_middle: str = _get_pandas_ta_col_name(bbands_series, "BBM_")
         col_upper: str = _get_pandas_ta_col_name(bbands_series, "BBU_")
@@ -481,7 +481,7 @@ def derive_bbands(
             bbands_daily_row = (equity_id, date_str, ti_def_id, float(upper), float(middle), float(lower), float(bandwidth), float(percent_b))
             rows.append(bbands_daily_row)
 
-        # --- Upsert into DB ---
+        #  Upsert into DB
         print(f"  → Prepared {len(rows)} rows for insertion")
         if rows:
             cursor.executemany(
@@ -515,13 +515,13 @@ def derive_atr(
         print(f"Processing ETF: {name} - Deriving atr values")
         print("=" * 60)
 
-        # --- Get equity_id ---
+        #  Get equity_id
         equity_id: int = equity_info[name]
         print(f"  → Retrieved equity_id: {equity_id}")
 
         print(f"  → Retrieved ti_def_id: {ti_def_id}")
 
-        # --- Calculate indicator (pandas_ta) ---
+        #  Calculate indicator (pandas_ta)
         rows: list[tuple[int, str, int, float]] = []
 
         print(f"  → Calculating Bollinger bands with length={length}...")
@@ -535,7 +535,7 @@ def derive_atr(
         # atr needs a warm-up period before values become non-NaN.
         warmup_periods: int = length - 1
 
-        # --- Prepare rows ---
+        #  Prepare rows
         for date, atr_val in atr_series.iloc[warmup_periods:].items():
             # Skip any remaining NaNs
             if pd.isna(atr_val):
@@ -545,7 +545,7 @@ def derive_atr(
             atr_daily_row = (equity_id, date_str, ti_def_id, float(atr_val))
             rows.append(atr_daily_row)
 
-        # --- Upsert into DB ---
+        #  Upsert into DB
         print(f"  → Prepared {len(rows)} rows for insertion")
         if rows:
             cursor.executemany(
@@ -579,14 +579,14 @@ def derive_obv(
         print(f"Processing ETF: {name} - Deriving on-balance volume values")
         print("=" * 60)
 
-        # --- Get equity_id ---
+        #  Get equity_id
         equity_id: int = equity_info[name]
         print(f"  → Retrieved equity_id: {equity_id}")
 
         print(f"  → Retrieved ti_def_id: {ti_def_id}")
         print(f"  → Parameters: signal={signal}")
 
-        # --- Calculate indicator (pandas_ta) ---
+        #  Calculate indicator (pandas_ta)
         rows: list[tuple[int, str, int, int]] = []
 
         print("  → Calculating OBV...")
@@ -595,7 +595,7 @@ def derive_obv(
         # OBV is cumulative; use signal length as warm-up to align with planned smoothing.
         warmup_periods: int = max(signal - 1, 0)
 
-        # --- Prepare rows ---
+        #  Prepare rows
         for date, obv_value in obv_series.iloc[warmup_periods:].items():
             # Skip any remaining NaNs
             if pd.isna(obv_value):
@@ -605,7 +605,7 @@ def derive_obv(
             obv_daily_row = (equity_id, date_str, ti_def_id, int(obv_value))
             rows.append(obv_daily_row)
 
-        # --- Upsert into DB ---
+        #  Upsert into DB
         print(f"  → Prepared {len(rows)} rows for insertion")
         if rows:
             cursor.executemany(
@@ -639,14 +639,14 @@ def derive_vol_roc(
         print(f"Processing ETF: {name} - Deriving volume activity values")
         print("=" * 60)
 
-        # --- Get equity_id ---
+        #  Get equity_id
         equity_id: int = equity_info[name]
         print(f"  → Retrieved equity_id: {equity_id}")
 
         print(f"  → Retrieved ti_def_id: {ti_def_id}")
         print(f"  → Parameters: length={length}")
 
-        # --- Calculate indicator (pandas) ---
+        #  Calculate indicator (pandas)
         rows: list[tuple[int, str, int, float, float]] = []
 
         print(f"  → Calculating volume SMA and ratio with length={length}...")
@@ -663,7 +663,7 @@ def derive_vol_roc(
         # Needs a warm-up period before values become non-NaN.
         warmup_periods: int = length - 1
 
-        # --- Prepare rows ---
+        #  Prepare rows
         for date, row in volume_activity_df.iloc[warmup_periods:].iterrows():
             vol_sma = row["volume_sma"]
             vol_ratio = row["volume_ratio"]
@@ -681,7 +681,7 @@ def derive_vol_roc(
             )
             rows.append(volume_activity_row)
 
-        # --- Upsert into DB ---
+        #  Upsert into DB
         print(f"  → Prepared {len(rows)} rows for insertion")
         if rows:
             cursor.executemany(
@@ -717,14 +717,14 @@ def derive_macd(
         print(f"Processing ETF: {name} - Deriving MACD values")
         print("=" * 60)
 
-        # --- Get equity_id ---
+        #  Get equity_id
         equity_id: int = equity_info[name]
         print(f"  → Retrieved equity_id: {equity_id}")
 
         print(f"  → Retrieved ti_def_id: {ti_def_id}")
         print(f"  → Parameters: fast={fast}, slow={slow}, signal={signal}")
 
-        # --- Calculate indicator (pandas_ta) ---
+        #  Calculate indicator (pandas_ta)
         rows: list[tuple[int, str, int, float, float, float]] = []
 
         print(f"  → Calculating MACD with fast={fast}, slow={slow}, signal={signal}...")
@@ -738,7 +738,7 @@ def derive_macd(
         # MACD needs a warm-up period before values become non-NaN.
         warmup_periods: int = slow + signal - 2
 
-        # --- Prepare rows ---
+        #  Prepare rows
         col_macd: str = _get_pandas_ta_col_name(macd_df, "MACD_")
         col_signal: str = _get_pandas_ta_col_name(macd_df, "MACDs_")
         col_hist: str = _get_pandas_ta_col_name(macd_df, "MACDh_")
@@ -762,7 +762,7 @@ def derive_macd(
             )
             rows.append(macd_daily_row)
 
-        # --- Upsert into DB ---
+        #  Upsert into DB
         print(f"  → Prepared {len(rows)} rows for insertion")
         if rows:
             cursor.executemany(
