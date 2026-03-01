@@ -16,11 +16,12 @@ class RsiFeatureGenerator(BaseFeatureGenerator):
     def generate(self) -> pd.DataFrame:
         rsi = self.raw_data["rsi"]
 
+        lookbacks = self.get_lookback_periods()
         self.features["RSI_current"] = rsi
-        self.features["RSI_lag3"] = self.lag_n(rsi, lag=3)
-        self.features["RSI_lag5"] = self.lag_n(rsi, lag=5)
-        self.features["RSI_delta3"] = self.delta(rsi, self.features["RSI_lag3"])
-        self.features["RSI_delta5"] = self.delta(rsi, self.features["RSI_lag5"])
+        self.features["RSI_lag_short"] = self.lag_n(rsi, lag=lookbacks["lag_short"])
+        self.features["RSI_lag_long"] = self.lag_n(rsi, lag=lookbacks["lag_long"])
+        self.features["RSI_delta_short"] = self.delta(rsi, self.features["RSI_lag_short"])
+        self.features["RSI_delta_long"] = self.delta(rsi, self.features["RSI_lag_long"])
         self.features["RSI_dist_30"] = self.dist_from_constant(rsi, 30)
         self.features["RSI_dist_70"] = self.dist_from_constant(rsi, 70)
 

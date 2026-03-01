@@ -18,15 +18,16 @@ class SmaFeatureGenerator(BaseFeatureGenerator):
         slow = self.raw_data["sma_slow"]
         close = self.raw_data["close"]
 
+        lookbacks = self.get_lookback_periods()
         self.features["SMA_fast"] = fast
         self.features["SMA_slow"] = slow
         self.features["SMA_distance"] = self.normalised_dist(fast, slow)
-        self.features["SMA_cross_above"] = self.crossover(fast, slow, lookback=2)
-        self.features["SMA_cross_below"] = self.crossover(slow, fast, lookback=2)
+        self.features["SMA_cross_above"] = self.crossover(fast, slow, lookback=lookbacks["crossover"])
+        self.features["SMA_cross_below"] = self.crossover(slow, fast, lookback=lookbacks["crossover"])
         self.features["SMA_bullish"] = self.bin_threshold(self.delta(fast, slow), threshold=0, above_threshold=True)
         self.features["Price_vs_fast"] = self.normalised_dist(close, fast)
         self.features["Price_vs_slow"] = self.normalised_dist(close, slow)
-        self.features["SMA_distance_lag5"] = self.lag_n(self.features["SMA_distance"], lag=5)
-        self.features["SMA_distance_delta"] = self.delta(self.features["SMA_distance"], self.features["SMA_distance_lag5"])
+        self.features["SMA_distance_lag"] = self.lag_n(self.features["SMA_distance"], lag=lookbacks["lag_long"])
+        self.features["SMA_distance_delta"] = self.delta(self.features["SMA_distance"], self.features["SMA_distance_lag"])
 
         return self.features

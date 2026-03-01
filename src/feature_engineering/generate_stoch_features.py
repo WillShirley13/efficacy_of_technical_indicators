@@ -17,12 +17,13 @@ class StochFeatureGenerator(BaseFeatureGenerator):
         k = self.raw_data["k"]
         d = self.raw_data["d"]
 
+        lookbacks = self.get_lookback_periods()
         self.features["STOCH_K"] = k
         self.features["STOCH_D"] = d
-        self.features["STOCH_K_lag3"] = self.lag_n(k, lag=3)
-        self.features["STOCH_D_lag3"] = self.lag_n(d, lag=3)
-        self.features["STOCH_crossover"] = self.crossover(k, d, lookback=2)
-        self.features["STOCH_K_delta"] = self.delta(k, self.features["STOCH_K_lag3"])
+        self.features["STOCH_K_lag"] = self.lag_n(k, lag=lookbacks["lag_short"])
+        self.features["STOCH_D_lag"] = self.lag_n(d, lag=lookbacks["lag_short"])
+        self.features["STOCH_crossover"] = self.crossover(k, d, lookback=lookbacks["crossover"])
+        self.features["STOCH_K_delta"] = self.delta(k, self.features["STOCH_K_lag"])
         self.features["STOCH_dist_20"] = self.dist_from_constant(k, 20).abs()
         self.features["STOCH_dist_80"] = self.dist_from_constant(k, 80).abs()
         self.features["STOCH_in_oversold"] = self.bin_threshold(k, 20, above_threshold=False)

@@ -3,7 +3,7 @@ import pandas as pd
 
 from src.utils import get_equity_id, get_stock_data
 
-SIGMA_MULTIPLE = 1.5  # Multipler for day_n's average recent volatility to determine meaningful move
+SIGMA_MULTIPLE = 1.25  # Multipler for day_n's average recent volatility to determine meaningful move
 VOL_LOOKBACK_MULTIPLE = 10  # multiplier for number of day we want to get volatiltiy data over. VOL_LOOKBACK_MULTIPLE * timeframe
 
 

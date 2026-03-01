@@ -26,3 +26,9 @@ report_notes/
 .env
 
 *.md
+
+# EDA results
+src/eda/mutual_info_series/
+src/eda/spearman_score_series/
+src/eda/candidates_to_remove/
+src/eda/intra_corr_heatmaps/

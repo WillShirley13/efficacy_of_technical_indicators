@@ -40,6 +40,60 @@ def _get_ti_definition(
     return ti_def_id, params_json
 
 
+def derive_ohlcv(
+    data: dict[str, pd.DataFrame],
+    conn: PooledMySQLConnection | MySQLConnectionAbstract,
+    equity_info: dict[str, int],
+) -> None:
+    """
+    Upsert OHLCV values into `ohlcv_daily`.
+    """
+    cursor: MySQLCursorAbstract = conn.cursor()
+    for name, df in data.items():
+        print("\n" + "=" * 60)
+        print(f"Processing ETF: {name} - Upserting OHLCV values")
+        print("=" * 60)
+
+        equity_id: int = equity_info[name]
+
+        rows: list[tuple[int, str, float, float, float, float, float, int]] = []
+
+        for date, row in df.iterrows():
+            open_value = row["open"]
+            high_value = row["high"]
+            low_value = row["low"]
+            close_value = row["close"]
+            volume_value = row["volume"]
+
+            date_ts: pd.Timestamp = cast(pd.Timestamp, date)
+            date_str: str = date_ts.strftime("%Y-%m-%d")
+            # Source data uses auto-adjusted prices, so `adj_close` mirrors `close`.
+            ohlcv_daily_row = (
+                equity_id,
+                date_str,
+                float(open_value),
+                float(high_value),
+                float(low_value),
+                float(close_value),
+                float(close_value),
+                int(volume_value),
+            )
+            rows.append(ohlcv_daily_row)
+
+        print(f"  → Prepared {len(rows)} rows for insertion")
+        if rows:
+            cursor.executemany(
+                "INSERT INTO ohlcv_daily (equity_id, trade_date, open, high, low, close, adj_close, volume) "
+                "VALUES (%s, %s, %s, %s, %s, %s, %s, %s) "
+                "ON DUPLICATE KEY UPDATE open = VALUES(open), high = VALUES(high), low = VALUES(low), "
+                "close = VALUES(close), adj_close = VALUES(adj_close), volume = VALUES(volume)",
+                rows,
+            )
+        conn.commit()
+        print(f"  ✓ Successfully upserted {len(rows)} OHLCV values for {name}")
+        print("=" * 60)
+
+
 def derive_rsi(
     data: dict[str, pd.DataFrame],
     timeframe: int,
@@ -780,15 +834,16 @@ if __name__ == "__main__":
     db_conn = get_db_conn()
     stock_data = get_stock_data()
     equity_info = get_equity_id()
+    derive_ohlcv(stock_data, db_conn, equity_info)
 
-    for tf in [3, 10, 20]:
-        derive_rsi(stock_data, tf, db_conn, equity_info)
-        derive_stoch(stock_data, tf, db_conn, equity_info)
-        derive_sma(stock_data, tf, db_conn, equity_info)
-        derive_ema(stock_data, tf, db_conn, equity_info)
-        derive_adx(stock_data, tf, db_conn, equity_info)
-        derive_bbands(stock_data, tf, db_conn, equity_info)
-        derive_atr(stock_data, tf, db_conn, equity_info)
-        derive_obv(stock_data, tf, db_conn, equity_info)
-        derive_vol_roc(stock_data, tf, db_conn, equity_info)
-        derive_macd(stock_data, tf, db_conn, equity_info)
+    # for tf in [3, 10, 20]:
+    #     derive_rsi(stock_data, tf, db_conn, equity_info)
+    #     derive_stoch(stock_data, tf, db_conn, equity_info)
+    #     derive_sma(stock_data, tf, db_conn, equity_info)
+    #     derive_ema(stock_data, tf, db_conn, equity_info)
+    #     derive_adx(stock_data, tf, db_conn, equity_info)
+    #     derive_bbands(stock_data, tf, db_conn, equity_info)
+    #     derive_atr(stock_data, tf, db_conn, equity_info)
+    #     derive_obv(stock_data, tf, db_conn, equity_info)
+    #     derive_vol_roc(stock_data, tf, db_conn, equity_info)
+    #     derive_macd(stock_data, tf, db_conn, equity_info)
